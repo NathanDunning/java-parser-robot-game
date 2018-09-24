@@ -86,9 +86,183 @@ public class Parser {
 	 * PROG ::= STMT+
 	 */
 	static RobotProgramNode parseProgram(Scanner s) {
-		// THE PARSER GOES HERE
+		PROGNode ProgramNode = new PROGNode();
 
-		return null;
+		while (s.hasNext()) {
+			ProgramNode.children.add(parseStatement(s));
+		}
+		return ProgramNode;
+	}
+
+	/**
+	 * STMT ::= ACT ";" | LOOP
+	 */
+	static RobotProgramNode parseStatement(Scanner s) {
+		STMTNode StatementNode;
+
+		if (s.hasNext("loop")) {
+			StatementNode = new STMTNode(parseLoop(s));
+		} else if (s.hasNext("if")) {
+			StatementNode = new STMTNode(parseIf(s));
+		} else if (s.hasNext("while")) {
+			StatementNode = new STMTNode(parseWhile(s));
+		} else {
+			StatementNode = new STMTNode(parseAction(s));
+			require(";", "Missing ';'", s);
+		}
+
+		return StatementNode;
+
+	}
+
+	/**
+	 * ACT ::= "move" | "turnL" | "turnR" | "takeFuel" | "wait"
+	 */
+	static RobotProgramNode parseAction(Scanner s) {
+		String next = s.next();
+
+		if (next.equals("move")) {
+			return new ACTNode(new MoveNode());
+		} else if (next.equals("turnL")) {
+			return new ACTNode(new TurnLNode());
+		} else if (next.equals("turnR")) {
+			return new ACTNode(new TurnRNode());
+		} else if (next.equals("turnAround")) {
+			return new ACTNode(new TurnAroundNode());
+		} else if (next.equals("shieldOn")) {
+			return new ACTNode(new ShieldOnNode());
+		} else if (next.equals("shieldOff")) {
+			return new ACTNode(new ShieldOffNode());
+		} else if (next.equals("takeFuel")) {
+			return new ACTNode(new TakeFuelNode());
+		} else if (next.equals("wait")) {
+			return new ACTNode(new WaitNode());
+		} else {
+			fail("No actions can be found", s);
+			return null;
+		}
+
+	}
+
+	/**
+	 * LOOP ::= "loop" BLOCK
+	 */
+	static RobotProgramNode parseLoop(Scanner s) {
+		LOOPNode LoopNode;
+
+		require("loop", "Missing 'loop'", s);
+		LoopNode = new LOOPNode(parseBlock(s));
+
+		return LoopNode;
+	}
+
+	/**
+	 * BLOCK ::= "{" STMT+ "}"
+	 */
+	static RobotProgramNode parseBlock(Scanner s) {
+		BLOCKNode BlockNode = new BLOCKNode();
+		require(OPENBRACE, "Missing '{'", s);
+
+		if (s.hasNext(CLOSEBRACE)) {
+			fail("Cannot have empty block", s);
+		}
+
+		while (!s.hasNext("}")) {
+			BlockNode.children.add(parseStatement(s));
+		}
+
+		require(CLOSEBRACE, "Missing '}'", s);
+
+		return BlockNode;
+	}
+
+	static RobotProgramNode parseIf(Scanner s) {
+		require("if", "Missing 'if'", s);
+		require(OPENPAREN, "Missing '('", s);
+		ConditionNode cond = parseCondition(s);
+		require(CLOSEPAREN, "Missing ')'", s);
+		RobotProgramNode block = parseBlock(s);
+
+		return new IFNode(cond, block);
+
+	}
+
+	static RobotProgramNode parseWhile(Scanner s) {
+		require("while", "Missing 'while'", s);
+		require(OPENPAREN, "Missing '('", s);
+		ConditionNode cond = parseCondition(s);
+		require(CLOSEPAREN, "Missing ')'", s);
+		RobotProgramNode block = parseBlock(s);
+
+		return new WHILENode(cond, block);
+
+	}
+
+	static ConditionNode parseCondition(Scanner s) {
+
+		ConditionNode relop = parseRelop(s);
+		require(OPENPAREN, "Missing '('", s);
+		SensorNode expr1 = new EXPNode(parseExpression(s));
+		require(",", "Missing ','", s);
+		SensorNode expr2 = new EXPNode(parseExpression(s));
+		require(CLOSEPAREN, "Missing ')'", s);
+		return new CONDNode(relop, expr1, expr2);
+
+	}
+
+	static SensorNode parseExpression(Scanner s) {
+		SensorNode exp;
+
+		if (s.hasNextInt()) {
+			exp = new EXPNode(parseNumber(s)); // ParseNum NEEDS to return an int
+		} else {
+			exp = new EXPNode(parseSensor(s));
+		}
+
+		return exp;
+	}
+
+	static ConditionNode parseRelop(Scanner s) {
+		String next = s.next();
+
+		if (next.equals("lt")) {
+			return new RELOPNode(new LTNode());
+		} else if (next.equals("gt")) {
+			return new RELOPNode(new GTNode());
+		} else if (next.equals("eq")) {
+			return new RELOPNode(new EQNode());
+		} else {
+			fail("Unable to find RELOP", s);
+			return null;
+		}
+	}
+
+	static SensorNode parseSensor(Scanner s) {
+		String next = s.next();
+
+		if (next.equals("fuelLeft")) {
+			return new SENNode(new FuelLeftNode());
+		} else if (next.equals("oppLR")) {
+			return new SENNode(new OppLRNode());
+		} else if (next.equals("oppFB")) {
+			return new SENNode(new OppFBNode());
+		} else if (next.equals("numBarrels")) {
+			return new SENNode(new NumBarrelsNode());
+		} else if (next.equals("barrelLR")) {
+			return new SENNode(new BarrelLRNode());
+		} else if (next.equals("barrelFB")) {
+			return new SENNode(new BarrelFBNode());
+		} else if (next.equals("wallDist")) {
+			return new SENNode(new WallDistNode());
+		} else {
+			fail("Unable to find SEN", s);
+			return null;
+		}
+
+	}
+
+	static SensorNode parseNumber(Scanner s) {
+		return new NUMNode(Integer.parseInt(require(NUMPAT, "Unable to find number", s)));
 	}
 
 	// utility methods for the parser
@@ -105,9 +279,8 @@ public class Parser {
 	}
 
 	/**
-	 * Requires that the next token matches a pattern if it matches, it consumes
-	 * and returns the token, if not, it throws an exception with an error
-	 * message
+	 * Requires that the next token matches a pattern if it matches, it consumes and
+	 * returns the token, if not, it throws an exception with an error message
 	 */
 	static String require(String p, String message, Scanner s) {
 		if (s.hasNext(p)) {
@@ -147,9 +320,9 @@ public class Parser {
 	}
 
 	/**
-	 * Checks whether the next token in the scanner matches the specified
-	 * pattern, if so, consumes the token and return true. Otherwise returns
-	 * false without consuming anything.
+	 * Checks whether the next token in the scanner matches the specified pattern,
+	 * if so, consumes the token and return true. Otherwise returns false without
+	 * consuming anything.
 	 */
 	static boolean checkFor(String p, Scanner s) {
 		if (s.hasNext(p)) {
@@ -171,4 +344,538 @@ public class Parser {
 
 }
 
-// You could add the node classes here, as long as they are not declared public (or private)
+// You could add the node classes here, as long as they are not declared public
+// (or private)
+
+class PROGNode implements RobotProgramNode {
+	ArrayList<RobotProgramNode> children = new ArrayList<RobotProgramNode>();
+
+	@Override
+	public void execute(Robot robot) {
+		for (RobotProgramNode r : children) {
+			r.execute(robot);
+		}
+	}
+
+	@Override
+	public String toString() {
+		String s = "";
+		for (RobotProgramNode r : children) {
+			s += r.toString();
+		}
+		return s;
+	}
+
+}
+
+class STMTNode implements RobotProgramNode {
+	final RobotProgramNode child;
+
+	STMTNode(RobotProgramNode child) {
+		this.child = child;
+	}
+
+	@Override
+	public void execute(Robot robot) {
+		child.execute(robot);
+	}
+
+	@Override
+	public String toString() {
+		return child.toString();
+	}
+
+}
+
+class ACTNode implements RobotProgramNode {
+	final RobotProgramNode child;
+
+	ACTNode(RobotProgramNode child) {
+		this.child = child;
+	}
+
+	@Override
+	public void execute(Robot robot) {
+		child.execute(robot);
+	}
+
+	@Override
+	public String toString() {
+		return child.toString();
+	}
+
+}
+
+class LOOPNode implements RobotProgramNode {
+	final RobotProgramNode block;
+
+	LOOPNode(RobotProgramNode block) {
+		this.block = block;
+	}
+
+	@Override
+	public void execute(Robot robot) {
+		block.execute(robot);
+	}
+
+	@Override
+	public String toString() {
+		return "\nloop{ \n" + this.block.toString() + "\n";
+	}
+
+}
+
+class BLOCKNode implements RobotProgramNode {
+	ArrayList<RobotProgramNode> children = new ArrayList<RobotProgramNode>();
+
+	@Override
+	public void execute(Robot robot) {
+		for (RobotProgramNode r : children) {
+			r.execute(robot);
+		}
+	}
+
+	@Override
+	public String toString() {
+		String s = "";
+		for (RobotProgramNode r : children) {
+			s += r.toString();
+		}
+		return s + "\n" + "}\n";
+	}
+
+}
+
+class IFNode implements RobotProgramNode {
+	final ConditionNode Condition;
+	final RobotProgramNode Block;
+
+	IFNode(ConditionNode cond, RobotProgramNode block) {
+		this.Condition = cond;
+		this.Block = block;
+	}
+
+	@Override
+	public void execute(Robot robot) {
+		if (Condition.evaluate(robot)) {
+			Block.execute(robot);
+		}
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+
+}
+
+class WHILENode implements RobotProgramNode {
+	final ConditionNode Condition;
+	final RobotProgramNode Block;
+
+	WHILENode(ConditionNode Cond, RobotProgramNode Block) {
+		this.Condition = Cond;
+		this.Block = Block;
+	}
+
+	@Override
+	public void execute(Robot robot) {
+		if (Condition.evaluate(robot)) {
+			Block.execute(robot);
+		}
+
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+
+}
+
+class CONDNode implements ConditionNode {
+	ConditionNode Relop;
+	SensorNode expr1;
+	SensorNode expr2;
+
+	CONDNode(ConditionNode rel, SensorNode e1, SensorNode e2) {
+		this.Relop = rel;
+		this.expr1 = e1;
+		this.expr2 = e2;
+	}
+
+	@Override
+	public boolean evaluate(Robot robot) {
+		if (Relop instanceof EQNode) {
+			if (expr1.evaluate(robot) == expr2.evaluate(robot)) {
+				return true;
+			}
+		} else if (Relop instanceof GTNode) {
+			if (expr1.evaluate(robot) > expr2.evaluate(robot)) {
+				return true;
+			}
+		} else if (Relop instanceof LTNode) {
+			if (expr1.evaluate(robot) < expr2.evaluate(robot)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+
+}
+
+class RELOPNode implements ConditionNode {
+	final ConditionNode operation;
+
+	RELOPNode(ConditionNode op) {
+		this.operation = op;
+	}
+
+	@Override
+	public boolean evaluate(Robot robot) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+
+}
+
+class SENNode implements SensorNode {
+	final SensorNode sensor;
+
+	SENNode(SensorNode sensor) {
+		this.sensor = sensor;
+	}
+
+	@Override
+	public int evaluate(Robot robot) {
+		return sensor.evaluate(robot);
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+
+}
+
+class EXPNode implements SensorNode {
+	final SensorNode expr;
+
+	EXPNode(SensorNode e1) {
+		this.expr = e1;
+
+	}
+
+	@Override
+	public int evaluate(Robot robot) {
+		return expr.evaluate(robot);
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+
+}
+
+class NUMNode implements SensorNode {
+	final int value;
+
+	NUMNode(int val) {
+		this.value = val;
+	}
+
+	@Override
+	public int evaluate(Robot robot) {
+		return value;
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class LTNode implements ConditionNode {
+
+	@Override
+	public boolean evaluate(Robot robot) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class GTNode implements ConditionNode {
+
+	@Override
+	public boolean evaluate(Robot robot) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class EQNode implements ConditionNode {
+
+	@Override
+	public boolean evaluate(Robot robot) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class FuelLeftNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.getFuel();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class OppLRNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.getOpponentLR();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class OppFBNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.getClosestBarrelFB();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class NumBarrelsNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.numBarrels();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class BarrelLRNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.getClosestBarrelLR();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class BarrelFBNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.getClosestBarrelFB();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class WallDistNode implements SensorNode {
+
+	@Override
+	public int evaluate(Robot robot) {
+		return robot.getDistanceToWall();
+	}
+
+	@Override
+	public String toString() {
+		// TODO
+		return null;
+	}
+}
+
+class MoveNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.move();
+
+	}
+
+	@Override
+	public String toString() {
+		return "move; ";
+	}
+
+}
+
+class TurnLNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.turnLeft();
+
+	}
+
+	@Override
+	public String toString() {
+		return "turnL; ";
+
+	}
+
+}
+
+class TurnRNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.turnRight();
+
+	}
+
+	@Override
+	public String toString() {
+		return "turnR; ";
+
+	}
+
+}
+
+class TurnAroundNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.turnAround();
+
+	}
+
+	@Override
+	public String toString() {
+		return "turnAround; ";
+
+	}
+}
+
+class ShieldOnNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.turnAround();
+
+	}
+
+	@Override
+	public String toString() {
+		return "shieldOn; ";
+
+	}
+}
+
+class ShieldOffNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.turnAround();
+
+	}
+
+	@Override
+	public String toString() {
+		return "shieldOff; ";
+
+	}
+}
+
+class TakeFuelNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.takeFuel();
+
+	}
+
+	@Override
+	public String toString() {
+		return "takeFuel; ";
+
+	}
+
+}
+
+class WaitNode implements RobotProgramNode {
+
+	@Override
+	public void execute(Robot robot) {
+		robot.idleWait();
+
+	}
+
+	@Override
+	public String toString() {
+		return "wait; ";
+
+	}
+
+}
