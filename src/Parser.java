@@ -179,9 +179,9 @@ public class Parser {
 	static RobotProgramNode parseIf(Scanner s) {
 		require("if", "Missing 'if'", s);
 		require(OPENPAREN, "Missing '('", s);
-		ConditionNode cond = parseCondition(s);
+		CONDNode cond = (CONDNode) parseCondition(s);
 		require(CLOSEPAREN, "Missing ')'", s);
-		RobotProgramNode block = parseBlock(s);
+		BLOCKNode block = (BLOCKNode) parseBlock(s);
 
 		return new IFNode(cond, block);
 
@@ -190,9 +190,9 @@ public class Parser {
 	static RobotProgramNode parseWhile(Scanner s) {
 		require("while", "Missing 'while'", s);
 		require(OPENPAREN, "Missing '('", s);
-		ConditionNode cond = parseCondition(s);
+		CONDNode cond = (CONDNode) parseCondition(s);
 		require(CLOSEPAREN, "Missing ')'", s);
-		RobotProgramNode block = parseBlock(s);
+		BLOCKNode block = (BLOCKNode) parseBlock(s);
 
 		return new WHILENode(cond, block);
 
@@ -200,18 +200,18 @@ public class Parser {
 
 	static ConditionNode parseCondition(Scanner s) {
 
-		ConditionNode relop = parseRelop(s);
+		RELOPNode relop = (RELOPNode) parseRelop(s);
 		require(OPENPAREN, "Missing '('", s);
-		SensorNode expr1 = new EXPNode(parseExpression(s));
+		EXPNode expr1 = new EXPNode(parseExpression(s));
 		require(",", "Missing ','", s);
-		SensorNode expr2 = new EXPNode(parseExpression(s));
+		EXPNode expr2 = new EXPNode(parseExpression(s));
 		require(CLOSEPAREN, "Missing ')'", s);
 		return new CONDNode(relop, expr1, expr2);
 
 	}
 
 	static SensorNode parseExpression(Scanner s) {
-		SensorNode exp;
+		EXPNode exp;
 
 		if (s.hasNextInt()) {
 			exp = new EXPNode(parseNumber(s)); // ParseNum NEEDS to return an int
@@ -262,7 +262,7 @@ public class Parser {
 	}
 
 	static SensorNode parseNumber(Scanner s) {
-		return new NUMNode(Integer.parseInt(require(NUMPAT, "Unable to find number", s)));
+		return new NUMNode(requireInt(NUMPAT, "Unable to find number", s));
 	}
 
 	// utility methods for the parser
@@ -407,10 +407,10 @@ class ACTNode implements RobotProgramNode {
 }
 
 class LOOPNode implements RobotProgramNode {
-	final RobotProgramNode block;
+	final BLOCKNode block;
 
 	LOOPNode(RobotProgramNode block) {
-		this.block = block;
+		this.block = (BLOCKNode) block;
 	}
 
 	@Override
@@ -420,7 +420,7 @@ class LOOPNode implements RobotProgramNode {
 
 	@Override
 	public String toString() {
-		return "\nloop{ \n" + this.block.toString() + "\n";
+		return "\nloop{ \n" + this.block.toString() + "\n" + "}";
 	}
 
 }
@@ -441,18 +441,18 @@ class BLOCKNode implements RobotProgramNode {
 		for (RobotProgramNode r : children) {
 			s += r.toString();
 		}
-		return s + "\n" + "}\n";
+		return s;
 	}
 
 }
 
 class IFNode implements RobotProgramNode {
-	final ConditionNode Condition;
-	final RobotProgramNode Block;
+	final CONDNode Condition;
+	final BLOCKNode Block;
 
-	IFNode(ConditionNode cond, RobotProgramNode block) {
+	IFNode(CONDNode cond, RobotProgramNode block) {
 		this.Condition = cond;
-		this.Block = block;
+		this.Block = (BLOCKNode) block;
 	}
 
 	@Override
@@ -464,59 +464,56 @@ class IFNode implements RobotProgramNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "if (" + Condition.toString() + ") " + "{\n\t" + Block.toString() + "\n} ";
 	}
 
 }
 
 class WHILENode implements RobotProgramNode {
-	final ConditionNode Condition;
-	final RobotProgramNode Block;
+	final CONDNode Condition;
+	final BLOCKNode Block;
 
-	WHILENode(ConditionNode Cond, RobotProgramNode Block) {
+	WHILENode(CONDNode Cond, RobotProgramNode Block) {
 		this.Condition = Cond;
-		this.Block = Block;
+		this.Block = (BLOCKNode) Block;
 	}
 
 	@Override
 	public void execute(Robot robot) {
-		if (Condition.evaluate(robot)) {
+		while (Condition.evaluate(robot)) {
 			Block.execute(robot);
 		}
-
 	}
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "while (" + Condition.toString() + ") " +"{\n\t" + Block.toString() + "\n} ";
 	}
 
 }
 
 class CONDNode implements ConditionNode {
-	ConditionNode Relop;
-	SensorNode expr1;
-	SensorNode expr2;
+	RELOPNode Relop;
+	EXPNode expr1;
+	EXPNode expr2;
 
-	CONDNode(ConditionNode rel, SensorNode e1, SensorNode e2) {
-		this.Relop = rel;
+	CONDNode(ConditionNode rel, EXPNode e1, EXPNode e2) {
+		this.Relop = (RELOPNode) rel;
 		this.expr1 = e1;
 		this.expr2 = e2;
 	}
 
 	@Override
 	public boolean evaluate(Robot robot) {
-		if (Relop instanceof EQNode) {
+		if (Relop.operation instanceof EQNode) {
 			if (expr1.evaluate(robot) == expr2.evaluate(robot)) {
 				return true;
 			}
-		} else if (Relop instanceof GTNode) {
+		} else if (Relop.operation instanceof GTNode) {
 			if (expr1.evaluate(robot) > expr2.evaluate(robot)) {
 				return true;
 			}
-		} else if (Relop instanceof LTNode) {
+		} else if (Relop.operation instanceof LTNode) {
 			if (expr1.evaluate(robot) < expr2.evaluate(robot)) {
 				return true;
 			}
@@ -525,9 +522,8 @@ class CONDNode implements ConditionNode {
 	}
 
 	@Override
-	public String toString() {
-		// TODO
-		return null;
+	public String toString() {S
+		return Relop.toString() + "(" + expr1.toString() + ", " + expr2.toString() + ")";
 	}
 
 }
@@ -547,8 +543,7 @@ class RELOPNode implements ConditionNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return operation.toString();
 	}
 
 }
@@ -567,8 +562,7 @@ class SENNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return sensor.toString();
 	}
 
 }
@@ -588,8 +582,7 @@ class EXPNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return expr.toString();
 	}
 
 }
@@ -608,8 +601,7 @@ class NUMNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "" + value;
 	}
 }
 
@@ -623,8 +615,7 @@ class LTNode implements ConditionNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "lt";
 	}
 }
 
@@ -638,8 +629,7 @@ class GTNode implements ConditionNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "gt";
 	}
 }
 
@@ -653,8 +643,7 @@ class EQNode implements ConditionNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "eq";
 	}
 }
 
@@ -667,8 +656,7 @@ class FuelLeftNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "fuelLeft";
 	}
 }
 
@@ -681,8 +669,7 @@ class OppLRNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "oppLR";
 	}
 }
 
@@ -690,13 +677,12 @@ class OppFBNode implements SensorNode {
 
 	@Override
 	public int evaluate(Robot robot) {
-		return robot.getClosestBarrelFB();
+		return robot.getOpponentFB();
 	}
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "oppFB";
 	}
 }
 
@@ -709,8 +695,7 @@ class NumBarrelsNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "numBarrels";
 	}
 }
 
@@ -723,8 +708,7 @@ class BarrelLRNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "barrelLR";
 	}
 }
 
@@ -737,8 +721,7 @@ class BarrelFBNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "barrelFB";
 	}
 }
 
@@ -751,8 +734,7 @@ class WallDistNode implements SensorNode {
 
 	@Override
 	public String toString() {
-		// TODO
-		return null;
+		return "wallDist";
 	}
 }
 
@@ -822,7 +804,7 @@ class ShieldOnNode implements RobotProgramNode {
 
 	@Override
 	public void execute(Robot robot) {
-		robot.turnAround();
+		robot.setShield(true);
 
 	}
 
@@ -837,7 +819,7 @@ class ShieldOffNode implements RobotProgramNode {
 
 	@Override
 	public void execute(Robot robot) {
-		robot.turnAround();
+		robot.setShield(false);
 
 	}
 
