@@ -122,8 +122,25 @@ public class Parser {
 		String next = s.next();
 
 		if (next.equals("move")) {
-			return new ACTNode(new MoveNode());
-		} else if (next.equals("turnL")) {
+			if (s.hasNext("(")) {
+				require(OPENPAREN, "Missing '('", s);
+				EXPNode param = (EXPNode) parseExpression(s);
+				require(CLOSEPAREN, "Missing ')'", s);
+				return new ACTNode(new MoveNode(param));
+			} else {
+				return new ACTNode(new MoveNode());
+			}
+		} else if (next.equals("wait")) {
+			if (s.hasNext("(")) {
+				require(OPENPAREN, "Missing '('", s);
+				EXPNode param = (EXPNode) parseExpression(s);
+				require(CLOSEPAREN, "Missing ')'", s);
+				return new ACTNode(new WaitNode(param));
+			} else {
+				return new ACTNode(new WaitNode());
+			}
+		}
+		else if (next.equals("turnL")) {
 			return new ACTNode(new TurnLNode());
 		} else if (next.equals("turnR")) {
 			return new ACTNode(new TurnRNode());
@@ -182,9 +199,19 @@ public class Parser {
 		CONDNode cond = (CONDNode) parseCondition(s);
 		require(CLOSEPAREN, "Missing ')'", s);
 		BLOCKNode block = (BLOCKNode) parseBlock(s);
-
-		return new IFNode(cond, block);
-
+		if (s.hasNext("else")) {
+			return new IFNode(cond, block, (ELSENode) parseElse(s));
+		} else {		
+			return new IFNode(cond, block);
+		}
+	}
+	
+	static RobotProgramNode parseElse(Scanner s) {
+		require("else", "Missing 'else'", s);
+		require(OPENBRACE, "Missing '{'", s);
+		BLOCKNode block = (BLOCKNode) parseBlock(s);
+		require(CLOSEBRACE, "Missing '}'", s);
+		return new ELSENode(block);
 	}
 
 	static RobotProgramNode parseWhile(Scanner s) {
@@ -199,14 +226,40 @@ public class Parser {
 	}
 
 	static ConditionNode parseCondition(Scanner s) {
-
-		RELOPNode relop = (RELOPNode) parseRelop(s);
-		require(OPENPAREN, "Missing '('", s);
-		EXPNode expr1 = new EXPNode(parseExpression(s));
-		require(",", "Missing ','", s);
-		EXPNode expr2 = new EXPNode(parseExpression(s));
-		require(CLOSEPAREN, "Missing ')'", s);
-		return new CONDNode(relop, expr1, expr2);
+		if (s.hasNext("and")) {
+			require("and", "Missing 'and'", s);
+			require(OPENPAREN, "Missing '('", s);
+			ConditionNode p1 = parseCondition(s);
+			require(",", "Missing ','", s);
+			ConditionNode p2 = parseCondition(s);
+			require(CLOSEPAREN, "Missing ')'", s);
+			return new CONDNode("and", p1, p2);
+		}
+		else if (s.hasNext("or")) {
+			require("or", "Missing 'or'", s);
+			require(OPENPAREN, "Missing '('", s);
+			ConditionNode p1 = parseCondition(s);
+			require(",", "Missing ','", s);
+			ConditionNode p2 = parseCondition(s);
+			require(CLOSEPAREN, "Missing ')'", s);
+			return new CONDNode("or", p1, p2);
+		}
+		else if (s.hasNext("not")) {
+			require("not", "Missing 'not'", s);
+			require(OPENPAREN, "Missing '('", s);
+			ConditionNode p1 = parseCondition(s);
+			require(CLOSEPAREN, "Missing ')'", s);
+			return new CONDNode("not", p1, null);
+		}
+		else {
+			RELOPNode relop = (RELOPNode) parseRelop(s);
+			require(OPENPAREN, "Missing '('", s);
+			EXPNode expr1 = new EXPNode(parseExpression(s));
+			require(",", "Missing ','", s);
+			EXPNode expr2 = new EXPNode(parseExpression(s));
+			require(CLOSEPAREN, "Missing ')'", s);
+			return new CONDNode(relop, expr1, expr2);
+		}
 
 	}
 
@@ -214,12 +267,38 @@ public class Parser {
 		EXPNode exp;
 
 		if (s.hasNextInt()) {
-			exp = new EXPNode(parseNumber(s)); // ParseNum NEEDS to return an int
-		} else {
+			exp = new EXPNode(parseNumber(s));
+		} 
+		else if (s.hasNext("add") || s.hasNext("sub") || s.hasNext("mul") || s.hasNext("div")) {
+			OPNode operation = (OPNode) parseOP(s);
+			require(OPENPAREN, "Missing '('", s);
+			EXPNode e1 = (EXPNode) parseExpression(s);
+			require(",", "Missing ','", s);
+			EXPNode e2 = (EXPNode) parseExpression(s);
+			require(CLOSEPAREN, "Missing ')'", s);
+			return new EXPNode(operation, e1, e2);
+		}
+		else {
 			exp = new EXPNode(parseSensor(s));
 		}
 
 		return exp;
+	}
+	
+	static SensorNode parseOP(Scanner s) {
+		if (s.hasNext("add")) {
+			return new OPNode("add");
+		}
+		else if (s.hasNext("sub")) {
+			return new OPNode("sub");
+		}
+		else if (s.hasNext("mul")) {
+			return new OPNode("mul");
+		}
+		else if (s.hasNext("div")) {
+			return new OPNode("div");
+		}
+		return null;
 	}
 
 	static ConditionNode parseRelop(Scanner s) {
@@ -449,16 +528,28 @@ class BLOCKNode implements RobotProgramNode {
 class IFNode implements RobotProgramNode {
 	final CONDNode Condition;
 	final BLOCKNode Block;
-
+	final ELSENode Else;
+	
 	IFNode(CONDNode cond, RobotProgramNode block) {
 		this.Condition = cond;
 		this.Block = (BLOCKNode) block;
+		this.Else = null;
+	}
+
+
+	IFNode(CONDNode cond, RobotProgramNode block, ELSENode Else) {
+		this.Condition = cond;
+		this.Block = (BLOCKNode) block;
+		this.Else = Else;
 	}
 
 	@Override
 	public void execute(Robot robot) {
 		if (Condition.evaluate(robot)) {
 			Block.execute(robot);
+			if (Else.Block != null) {
+				Else.execute(robot);
+			}
 		}
 	}
 
@@ -467,6 +558,29 @@ class IFNode implements RobotProgramNode {
 		return "if (" + Condition.toString() + ") " + "{\n\t" + Block.toString() + "\n} ";
 	}
 
+}
+
+class ELSENode implements RobotProgramNode {
+	final BLOCKNode Block;
+	
+	ELSENode(){
+		this.Block = null;
+	}
+	
+	ELSENode(BLOCKNode block){
+		this.Block = block;
+	}
+	
+	@Override
+	public void execute(Robot robot) {
+			Block.execute(robot);
+	}
+	
+	@Override
+	public String toString() {
+		return "else " + "{\n\t" + Block.toString() + "\n} ";
+	}
+	
 }
 
 class WHILENode implements RobotProgramNode {
@@ -487,20 +601,36 @@ class WHILENode implements RobotProgramNode {
 
 	@Override
 	public String toString() {
-		return "while (" + Condition.toString() + ") " +"{\n\t" + Block.toString() + "\n} ";
+		return "while (" + Condition.toString() + ") " + "{\n\t" + Block.toString() + "\n} ";
 	}
 
 }
 
 class CONDNode implements ConditionNode {
-	RELOPNode Relop;
-	EXPNode expr1;
-	EXPNode expr2;
+	final RELOPNode Relop;
+	final EXPNode expr1;
+	final EXPNode expr2;
+	final String cond;
+	final ConditionNode condParam1;
+	final ConditionNode condParam2;
+	
 
 	CONDNode(ConditionNode rel, EXPNode e1, EXPNode e2) {
 		this.Relop = (RELOPNode) rel;
 		this.expr1 = e1;
 		this.expr2 = e2;
+		this.cond = null;
+		this.condParam1 = null;
+		this.condParam2 = null;
+	}
+	
+	CONDNode(String rel, ConditionNode e1, ConditionNode e2) {
+		this.Relop = null;
+		this.expr1 = null;
+		this.expr2 = null;
+		this.cond = rel;
+		this.condParam1 = e1;
+		this.condParam2 = e2;
 	}
 
 	@Override
@@ -522,7 +652,7 @@ class CONDNode implements ConditionNode {
 	}
 
 	@Override
-	public String toString() {S
+	public String toString() {
 		return Relop.toString() + "(" + expr1.toString() + ", " + expr2.toString() + ")";
 	}
 
@@ -568,21 +698,66 @@ class SENNode implements SensorNode {
 }
 
 class EXPNode implements SensorNode {
-	final SensorNode expr;
+	final OPNode operation;
+	final SensorNode expr1;
+	final SensorNode expr2;
 
 	EXPNode(SensorNode e1) {
-		this.expr = e1;
-
+		this.operation = null;
+		this.expr1 = e1;
+		this.expr2 = null;
+	}
+	
+	EXPNode(OPNode op, SensorNode e1, SensorNode e2){
+		this.operation = op;
+		this.expr1 = e1;
+		this.expr2 = e2;
 	}
 
 	@Override
 	public int evaluate(Robot robot) {
-		return expr.evaluate(robot);
+		if (this.operation == null) {
+			return expr1.evaluate(robot);	
+		}
+		else {
+			if (operation.operation.toString().equals("add")) {
+				return expr1.evaluate(robot) + expr2.evaluate(robot);
+			}
+			else if (operation.operation.toString().equals("sub")) {
+				return expr1.evaluate(robot) - expr2.evaluate(robot);
+			}
+			else if (operation.operation.toString().equals("mul")) {
+				return expr1.evaluate(robot) * expr2.evaluate(robot);
+			}
+			else if (operation.operation.toString().equals("div")) {
+				return expr1.evaluate(robot) / expr2.evaluate(robot);
+			}
+			else {return -1;}
+		}
 	}
 
 	@Override
 	public String toString() {
-		return expr.toString();
+		
+		if (this.operation == null) {
+			return expr1.toString();
+		}
+		else {
+			if (operation.operation.toString().equals("add")) {
+				return "add (" + expr1.toString() + "," + expr2.toString() + ")";
+			}
+			else if (operation.operation.toString().equals("sub")) {
+				return "sub (" + expr1.toString() + "," + expr2.toString() + ")";
+			}
+			else if (operation.operation.toString().equals("mul")) {
+				return "mul (" + expr1.toString() + "," + expr2.toString() + ")";
+			}
+			else if (operation.operation.toString().equals("div")) {
+				return "div (" + expr1.toString() + "," + expr2.toString() + ")";
+			}
+			else {return null;}
+		}
+		
 	}
 
 }
@@ -603,6 +778,26 @@ class NUMNode implements SensorNode {
 	public String toString() {
 		return "" + value;
 	}
+}
+
+class OPNode implements SensorNode {
+	final String operation;
+	
+	OPNode(String s){
+		this.operation = s;
+	}
+	
+	@Override
+	public int evaluate(Robot robot) {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+	
+	@Override
+	public String toString() {
+		return this.operation;
+	}
+	
 }
 
 class LTNode implements ConditionNode {
@@ -739,6 +934,15 @@ class WallDistNode implements SensorNode {
 }
 
 class MoveNode implements RobotProgramNode {
+	final EXPNode expr;
+
+	MoveNode() {
+		expr = null;
+	}
+
+	MoveNode(EXPNode expr) {
+		this.expr = expr;
+	}
 
 	@Override
 	public void execute(Robot robot) {
@@ -847,7 +1051,16 @@ class TakeFuelNode implements RobotProgramNode {
 }
 
 class WaitNode implements RobotProgramNode {
+	final EXPNode expr;
 
+	WaitNode() {
+		expr = null;
+	}
+
+	WaitNode(EXPNode expr) {
+		this.expr = expr;
+	}
+	
 	@Override
 	public void execute(Robot robot) {
 		robot.idleWait();
